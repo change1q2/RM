@@ -1,0 +1,28 @@
+{
+  "name": "rm-crm-server",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "init-db": "node src/db/init-db.js",
+    "seed": "node src/db/seed.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "better-sqlite3": "^11.3.0",
+    "cors": "^2.8.5",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "express-jwt": "^8.4.1",
+    "multer": "^1.4.5-lts.1",
+    "xlsx": "^0.18.5",
+    "winston": "^3.13.0",
+    "dayjs": "^1.11.10",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
