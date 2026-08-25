@@ -9,6 +9,9 @@ const USE_TURSO = !!(TURSO_URL && TURSO_TOKEN);
 let sqlite = null;
 let tursoClient = null;
 let backendReady = false;
+// Turso 模式下的事务上下文：transaction() 期间非 null，query/queryOne/run 自动路由到它
+// 原因：Turso HTTP 协议每个 execute 是独立请求，裸 BEGIN/COMMIT 跨请求会丢事务上下文
+let activeTx = null;
 
 // 懒加载：首次访问数据库时才初始化连接
 // 原因：Vercel Serverless 缺 Turso 环境变量时，模块顶层 new Database() 会因只读文件系统抛错，
@@ -47,18 +50,26 @@ function normalizeParams(params) {
 function toArray(params) {
   const p = normalizeParams(params);
   if (p.length === 0) return [];
-  // better-sqlite3 也接受数组形式；turso 的 execute 对 ? 占位符用 args 数组
-  return p;
+  // 规范化：libsql hrana 协议比 better-sqlite3 严格
+  // - BigInt → Number（Turso 读出的 INTEGER 是 BigInt，回传时不被接受）
+  // - undefined → null（better-sqlite3 把 undefined 当 null，libsql 直接报 Unsupported type）
+  // - boolean → 1/0（libsql 接受 boolean，但保险起见统一数值化）
+  return p.map(v => {
+    if (typeof v === 'bigint') return Number(v);
+    if (v === undefined) return null;
+    if (typeof v === 'boolean') return v ? 1 : 0;
+    return v;
+  });
 }
 
 async function query(sql, params) {
   ensureBackend();
   const args = toArray(params);
   if (USE_TURSO) {
-    const rs = await tursoClient.execute({ sql, args });
+    const rs = await (activeTx || tursoClient).execute({ sql, args });
     return rs.rows.map(r => {
       const o = {};
-      rs.columns.forEach((col, i) => { o[col.name] = r[i]; });
+      rs.columns.forEach((col, i) => { o[typeof col === 'string' ? col : col.name] = typeof r[i] === 'bigint' ? Number(r[i]) : r[i]; });
       return o;
     });
   }
@@ -69,11 +80,11 @@ async function queryOne(sql, params) {
   ensureBackend();
   const args = toArray(params);
   if (USE_TURSO) {
-    const rs = await tursoClient.execute({ sql, args });
+    const rs = await (activeTx || tursoClient).execute({ sql, args });
     if (rs.rows.length === 0) return null;
     const r = rs.rows[0];
     const o = {};
-    rs.columns.forEach((col, i) => { o[col.name] = r[i]; });
+    rs.columns.forEach((col, i) => { o[typeof col === 'string' ? col : col.name] = typeof r[i] === 'bigint' ? Number(r[i]) : r[i]; });
     return o;
   }
   return sqlite.prepare(sql).get(...args) || null;
@@ -83,7 +94,7 @@ async function run(sql, params) {
   ensureBackend();
   const args = toArray(params);
   if (USE_TURSO) {
-    const rs = await tursoClient.execute({ sql, args });
+    const rs = await (activeTx || tursoClient).execute({ sql, args });
     const id = rs.lastInsertRowid != null ? Number(rs.lastInsertRowid) : undefined;
     return { lastInsertRowid: id, changes: rs.rowsAffected || 0 };
   }
@@ -107,26 +118,33 @@ async function execBatch(statements) {
 }
 
 // transaction() 包装：传入的 fn 是 async 函数
-// Turso 和本地 SQLite 都统一用显式 BEGIN IMMEDIATE / COMMIT / ROLLBACK 串行事务
-// （原因：better-sqlite3 原生 transaction() 不接受返回 Promise 的异步函数）
+// Turso 模式：用 client.transaction('write') 对象，query/queryOne/run 通过 activeTx 自动路由
+// 本地 SQLite：用显式 BEGIN IMMEDIATE / COMMIT / ROLLBACK（单连接，跨请求保持事务）
 function transaction(fn) {
   return async function wrapped(...args) {
     ensureBackend();
     if (USE_TURSO) {
-      await tursoClient.execute('BEGIN IMMEDIATE');
-    } else {
-      sqlite.exec('BEGIN IMMEDIATE');
+      const tx = await tursoClient.transaction('write');
+      const prev = activeTx;
+      activeTx = tx;
+      try {
+        const result = await fn(...args);
+        await tx.commit();
+        return result;
+      } catch (e) {
+        try { await tx.rollback(); } catch (_) {}
+        throw e;
+      } finally {
+        activeTx = prev;
+      }
     }
+    sqlite.exec('BEGIN IMMEDIATE');
     try {
       const result = await fn(...args);
-      if (USE_TURSO) await tursoClient.execute('COMMIT');
-      else sqlite.exec('COMMIT');
+      sqlite.exec('COMMIT');
       return result;
     } catch (e) {
-      try {
-        if (USE_TURSO) await tursoClient.execute('ROLLBACK');
-        else sqlite.exec('ROLLBACK');
-      } catch (_) {}
+      try { sqlite.exec('ROLLBACK'); } catch (_) {}
       throw e;
     }
   };

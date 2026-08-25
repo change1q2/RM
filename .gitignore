@@ -9,3 +9,5 @@ server/uploads/avatars/*
 !server/uploads/avatars/.gitkeep
 dist/
 *.log
+.vercel
+.env*
