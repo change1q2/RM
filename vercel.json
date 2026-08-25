@@ -1,17 +1,16 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "cd client && npm install --no-audit --no-fund --prefer-offline && cd .. && npm --prefix client run build",
+  "buildCommand": "npm install --no-audit --no-fund --omit=dev && cd server && npm install --no-audit --no-fund --omit=optional --omit=dev && cd .. && npm --prefix client install --no-audit --no-fund --omit=optional && npm --prefix client run build",
   "outputDirectory": null,
-  "installCommand": "npm install --no-audit --no-fund && cd server && npm install --no-audit --no-fund --omit=optional",
+  "installCommand": "echo skip-install",
   "functions": {
     "api/index.js": {
       "runtime": "@vercel/node@3",
-      "maxDuration": 15
+      "maxDuration": 30
     }
   },
   "rewrites": [
-    { "source": "/(assets|uploads)/.*", "destination": "/$0" },
-    { "source": "/((?!assets|uploads).*)", "destination": "/api/index.js" }
+    { "source": "/(.*)", "destination": "/api/index.js" }
   ]
 }
