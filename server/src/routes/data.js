@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const XLSX = require('xlsx');
-const { db, query, run, transaction } = require('../db');
+const { query, run, transaction } = require('../db');
 const upload = require('../middleware/upload');
 
 const FIELD_MAP = {
@@ -20,9 +20,9 @@ const FIELD_MAP = {
   '标签': 'tags'
 };
 
-router.get('/export', (req, res) => {
-  const persons = query('SELECT * FROM persons ORDER BY id');
-  const tagRows = query('SELECT pt.person_id, t.name FROM person_tags pt JOIN tags t ON t.id = pt.tag_id');
+router.get('/export', async (req, res) => {
+  const persons = await query('SELECT * FROM persons ORDER BY id');
+  const tagRows = await query('SELECT pt.person_id, t.name FROM person_tags pt JOIN tags t ON t.id = pt.tag_id');
   const tagMap = {};
   for (const t of tagRows) {
     if (!tagMap[t.person_id]) tagMap[t.person_id] = [];
@@ -45,7 +45,7 @@ router.get('/export', (req, res) => {
   res.send(buf);
 });
 
-router.get('/template', (req, res) => {
+router.get('/template', async (req, res) => {
   const sample = [{
     '姓名': '示例：张三', '电话': '13800138000', '微信': 'wx_zhangsan',
     '邮箱': 'zhangsan@example.com', '生日': '1985-06-15', '城市': '北京',
@@ -62,7 +62,7 @@ router.get('/template', (req, res) => {
   res.send(buf);
 });
 
-router.post('/import', upload.single('file'), (req, res) => {
+router.post('/import', upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: '请上传 Excel/CSV 文件' });
   const filePath = req.file.path;
   let workbook;
@@ -80,13 +80,11 @@ router.post('/import', upload.single('file'), (req, res) => {
   let success = 0;
   let failed = 0;
   const errors = [];
-  const allTags = query('SELECT id, name FROM tags');
+  const allTags = await query('SELECT id, name FROM tags');
   const tagNameMap = {};
   allTags.forEach(t => { tagNameMap[t.name] = t.id; });
 
-  transaction(() => {
-    const insertPerson = db.prepare('INSERT INTO persons (name, phone, wechat, email, birthday, city, company, position, intimacy, resource_desc, need_desc, private_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
-    const insertTag = db.prepare('INSERT OR IGNORE INTO person_tags (person_id, tag_id) VALUES (?, ?)');
+  await transaction(async () => {
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const record = {};
@@ -97,13 +95,18 @@ router.post('/import', upload.single('file'), (req, res) => {
       if (!record.name) { failed++; errors.push('第' + (i + 2) + '行：缺少姓名'); continue; }
       try {
         const intimacy = record.intimacy ? Math.min(5, Math.max(1, parseInt(record.intimacy) || 3)) : 3;
-        const r = insertPerson.run(record.name, record.phone || null, record.wechat || null, record.email || null, record.birthday || null, record.city || null, record.company || null, record.position || null, intimacy, record.resource_desc || null, record.need_desc || null, record.private_note || null);
+        const r = await run(
+          'INSERT INTO persons (name, phone, wechat, email, birthday, city, company, position, intimacy, resource_desc, need_desc, private_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+          [record.name, record.phone || null, record.wechat || null, record.email || null, record.birthday || null, record.city || null, record.company || null, record.position || null, intimacy, record.resource_desc || null, record.need_desc || null, record.private_note || null]
+        );
         const pid = r.lastInsertRowid;
         if (record.tags) {
           const tagNames = record.tags.split(/[、,，;；]/).map(s => s.trim()).filter(Boolean);
           for (const tn of tagNames) {
             const tid = tagNameMap[tn];
-            if (tid) insertTag.run(pid, tid);
+            if (tid) {
+              await run('INSERT OR IGNORE INTO person_tags (person_id, tag_id) VALUES (?, ?)', [pid, tid]);
+            }
           }
         }
         success++;

@@ -2,14 +2,14 @@ const express = require('express');
 const router = express.Router();
 const { query, queryOne } = require('../db');
 
-function buildGraph(centerId, depth) {
+async function buildGraph(centerId, depth) {
   const visited = new Set([centerId]);
   let currentLevel = [centerId];
 
   for (let d = 0; d < depth; d++) {
     if (currentLevel.length === 0) break;
     const ph = currentLevel.map(() => '?').join(',');
-    const rels = query(
+    const rels = await query(
       'SELECT person_a_id, person_b_id FROM relationships WHERE person_a_id IN (' + ph + ') OR person_b_id IN (' + ph + ')',
       [...currentLevel, ...currentLevel]
     );
@@ -25,8 +25,8 @@ function buildGraph(centerId, depth) {
   if (allIds.length === 0) return { nodes: [], links: [] };
   const ph = allIds.map(() => '?').join(',');
 
-  const persons = query('SELECT * FROM persons WHERE id IN (' + ph + ')', allIds);
-  const tagRows = query(
+  const persons = await query('SELECT * FROM persons WHERE id IN (' + ph + ')', allIds);
+  const tagRows = await query(
     'SELECT pt.person_id, t.id as tag_id, t.name as tag_name, t.color as tag_color FROM person_tags pt JOIN tags t ON pt.tag_id = t.id WHERE pt.person_id IN (' + ph + ')',
     allIds
   );
@@ -47,7 +47,7 @@ function buildGraph(centerId, depth) {
     is_center: p.id === centerId
   }));
 
-  const allRels = query(
+  const allRels = await query(
     'SELECT person_a_id, person_b_id, relation_type, strength, introduced_by FROM relationships WHERE person_a_id IN (' + ph + ') AND person_b_id IN (' + ph + ')', [...allIds, ...allIds]
   );
   const links = allRels.map(r => ({
@@ -61,22 +61,21 @@ function buildGraph(centerId, depth) {
   return { nodes, links };
 }
 
-router.get('/random', (req, res) => {
-  const row = queryOne(
+router.get('/random', async (req, res) => {
+  const row = await queryOne(
     'SELECT p.id, p.name FROM persons p WHERE EXISTS (SELECT 1 FROM relationships r WHERE r.person_a_id = p.id OR r.person_b_id = p.id) ORDER BY RANDOM() LIMIT 1'
   );
   if (!row) return res.status(404).json({ error: '暂无有关系的人物数据' });
   res.json(row);
 });
 
-router.get('/:centerId', (req, res) => {
+router.get('/:centerId', async (req, res) => {
   const centerId = parseInt(req.params.centerId);
   const depth = Math.min(2, parseInt(req.query.depth) || 2);
-  const center = queryOne('SELECT id FROM persons WHERE id = ?', [centerId]);
+  const center = await queryOne('SELECT id FROM persons WHERE id = ?', [centerId]);
   if (!center) return res.status(404).json({ error: '人物不存在' });
-  const data = buildGraph(centerId, depth);
+  const data = await buildGraph(centerId, depth);
   res.json(data);
 });
 
 module.exports = router;
-
