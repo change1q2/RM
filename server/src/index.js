@@ -46,8 +46,12 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || '服务器内部错误' });
 });
 
-app.listen(PORT, () => {
-  console.log('服务器已启动: http://localhost:' + PORT);
-});
+// 仅在本地直接运行 (node src/index.js) 时启动 HTTP 服务
+// Vercel Serverless 环境下由 api/index.js 导出 app 作为函数处理器, 不能 listen
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log('服务器已启动: http://localhost:' + PORT);
+  });
+}
 
 module.exports = app;
