@@ -6,7 +6,6 @@
   "installCommand": "echo skip-install",
   "functions": {
     "api/index.js": {
-      "runtime": "@vercel/node@3",
       "maxDuration": 30
     }
   },
