@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "npm install --no-audit --no-fund --omit=dev && cd server && npm install --no-audit --no-fund --omit=optional --omit=dev && cd .. && npm --prefix client install --no-audit --no-fund --omit=optional && npm --prefix client run build",
+  "buildCommand": "npm install --no-audit --no-fund --omit=dev --include=optional && cd server && npm install --no-audit --no-fund --omit=optional --omit=dev && cd .. && rm -rf client/node_modules client/package-lock.json && npm --prefix client install --no-audit --no-fund --include=optional && npm --prefix client run build",
   "outputDirectory": null,
   "installCommand": "echo skip-install",
   "functions": {
