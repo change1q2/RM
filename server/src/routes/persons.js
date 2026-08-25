@@ -1,12 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const { query, queryOne, run, transaction } = require('../db');
+const { authMiddleware } = require('../middleware/auth');
 const upload = require('../middleware/upload');
+
+// 所有路由都需要认证
+router.use(authMiddleware);
 
 router.get('/', async (req, res) => {
   const { keyword, tags, tagLogic, intimacy, city, company, sortBy, sortOrder, page, pageSize } = req.query;
-  const where = ['1=1'];
-  const params = [];
+  const where = ['p.user_id = ?'];
+  const params = [req.user.id];
 
   if (keyword) {
     where.push('(p.name LIKE ? OR p.company LIKE ? OR p.position LIKE ? OR p.resource_desc LIKE ? OR p.need_desc LIKE ?)');
@@ -75,7 +79,7 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  const person = await queryOne('SELECT * FROM persons WHERE id = ?', [id]);
+  const person = await queryOne('SELECT * FROM persons WHERE id = ? AND user_id = ?', [id, req.user.id]);
   if (!person) return res.status(404).json({ error: '人物不存在' });
 
   const tags = await query(
@@ -83,13 +87,13 @@ router.get('/:id', async (req, res) => {
     [id]
   );
   const lastInteraction = await queryOne(
-    'SELECT interaction_date FROM interactions WHERE person_id = ? ORDER BY interaction_date DESC LIMIT 1',
-    [id]
+    'SELECT interaction_date FROM interactions WHERE person_id = ? AND user_id = ? ORDER BY interaction_date DESC LIMIT 1',
+    [id, req.user.id]
   );
-  const interactionCountRow = await queryOne('SELECT COUNT(*) as c FROM interactions WHERE person_id = ?', [id]);
+  const interactionCountRow = await queryOne('SELECT COUNT(*) as c FROM interactions WHERE person_id = ? AND user_id = ?', [id, req.user.id]);
   const relationshipCountRow = await queryOne(
-    'SELECT COUNT(*) as c FROM relationships WHERE person_a_id = ? OR person_b_id = ?',
-    [id, id]
+    'SELECT COUNT(*) as c FROM relationships WHERE (person_a_id = ? OR person_b_id = ?) AND user_id = ?',
+    [id, id, req.user.id]
   );
 
   res.json({
@@ -105,8 +109,9 @@ router.post('/', async (req, res) => {
   if (!b.name) return res.status(400).json({ error: '姓名为必填项' });
 
   const result = await run(
-    'INSERT INTO persons (name, phone, wechat, email, birthday, city, company, position, intimacy, resource_desc, need_desc, private_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+    'INSERT INTO persons (user_id, name, phone, wechat, email, birthday, city, company, position, intimacy, resource_desc, need_desc, private_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
     [
+      req.user.id,
       b.name,
       b.phone || null, b.wechat || null, b.email || null, b.birthday || null,
       b.city || null, b.company || null, b.position || null,
@@ -130,21 +135,21 @@ router.post('/', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  const existing = await queryOne('SELECT id FROM persons WHERE id = ?', [id]);
+  const existing = await queryOne('SELECT id FROM persons WHERE id = ? AND user_id = ?', [id, req.user.id]);
   if (!existing) return res.status(404).json({ error: '人物不存在' });
 
   const b = req.body || {};
   if (!b.name) return res.status(400).json({ error: '姓名为必填项' });
 
   await run(
-    'UPDATE persons SET name=?, phone=?, wechat=?, email=?, birthday=?, city=?, company=?, position=?, intimacy=?, resource_desc=?, need_desc=?, private_note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?',
+    'UPDATE persons SET name=?, phone=?, wechat=?, email=?, birthday=?, city=?, company=?, position=?, intimacy=?, resource_desc=?, need_desc=?, private_note=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?',
     [
       b.name,
       b.phone || null, b.wechat || null, b.email || null, b.birthday || null,
       b.city || null, b.company || null, b.position || null,
       b.intimacy != null ? b.intimacy : 3,
       b.resource_desc || null, b.need_desc || null, b.private_note || null,
-      id
+      id, req.user.id
     ]
   );
 
@@ -163,19 +168,19 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  const existing = await queryOne('SELECT id FROM persons WHERE id = ?', [id]);
+  const existing = await queryOne('SELECT id FROM persons WHERE id = ? AND user_id = ?', [id, req.user.id]);
   if (!existing) return res.status(404).json({ error: '人物不存在' });
-  await run('DELETE FROM persons WHERE id = ?', [id]);
+  await run('DELETE FROM persons WHERE id = ? AND user_id = ?', [id, req.user.id]);
   res.json({ ok: true, message: '删除成功' });
 });
 
 router.post('/:id/avatar', upload.single('avatar'), async (req, res) => {
   const id = parseInt(req.params.id);
-  const existing = await queryOne('SELECT id FROM persons WHERE id = ?', [id]);
+  const existing = await queryOne('SELECT id FROM persons WHERE id = ? AND user_id = ?', [id, req.user.id]);
   if (!existing) return res.status(404).json({ error: '人物不存在' });
   if (!req.file) return res.status(400).json({ error: '请上传头像图片' });
   const avatarUrl = '/uploads/avatars/' + req.file.filename;
-  await run('UPDATE persons SET avatar_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [avatarUrl, id]);
+  await run('UPDATE persons SET avatar_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [avatarUrl, id, req.user.id]);
   res.json({ avatar_url: avatarUrl });
 });
 

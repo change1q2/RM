@@ -2,7 +2,11 @@ const express = require('express');
 const router = express.Router();
 const XLSX = require('xlsx');
 const { query, run, transaction } = require('../db');
+const { authMiddleware } = require('../middleware/auth');
 const upload = require('../middleware/upload');
+
+// 所有路由都需要认证
+router.use(authMiddleware);
 
 const FIELD_MAP = {
   '姓名': 'name', '名字': 'name',
@@ -21,7 +25,7 @@ const FIELD_MAP = {
 };
 
 router.get('/export', async (req, res) => {
-  const persons = await query('SELECT * FROM persons ORDER BY id');
+  const persons = await query('SELECT * FROM persons WHERE user_id = ? ORDER BY id', [req.user.id]);
   const tagRows = await query('SELECT pt.person_id, t.name FROM person_tags pt JOIN tags t ON t.id = pt.tag_id');
   const tagMap = {};
   for (const t of tagRows) {
@@ -96,8 +100,8 @@ router.post('/import', upload.single('file'), async (req, res) => {
       try {
         const intimacy = record.intimacy ? Math.min(5, Math.max(1, parseInt(record.intimacy) || 3)) : 3;
         const r = await run(
-          'INSERT INTO persons (name, phone, wechat, email, birthday, city, company, position, intimacy, resource_desc, need_desc, private_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
-          [record.name, record.phone || null, record.wechat || null, record.email || null, record.birthday || null, record.city || null, record.company || null, record.position || null, intimacy, record.resource_desc || null, record.need_desc || null, record.private_note || null]
+          'INSERT INTO persons (user_id, name, phone, wechat, email, birthday, city, company, position, intimacy, resource_desc, need_desc, private_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+          [req.user.id, record.name, record.phone || null, record.wechat || null, record.email || null, record.birthday || null, record.city || null, record.company || null, record.position || null, intimacy, record.resource_desc || null, record.need_desc || null, record.private_note || null]
         );
         const pid = r.lastInsertRowid;
         if (record.tags) {

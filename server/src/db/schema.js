@@ -9,6 +9,7 @@ const schemaTables = {
 
   persons: `CREATE TABLE IF NOT EXISTS persons (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     phone TEXT,
     wechat TEXT,
@@ -45,6 +46,7 @@ const schemaTables = {
 
   relationships: `CREATE TABLE IF NOT EXISTS relationships (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE,
     person_a_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
     person_b_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
     relation_type TEXT NOT NULL,
@@ -56,6 +58,7 @@ const schemaTables = {
 
   interactions: `CREATE TABLE IF NOT EXISTS interactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE,
     person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
     interaction_date DATE NOT NULL,
     method TEXT NOT NULL,
@@ -75,6 +78,7 @@ const schemaTables = {
 
   opportunities: `CREATE TABLE IF NOT EXISTS opportunities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     person_id INTEGER REFERENCES persons(id) ON DELETE SET NULL,
     company TEXT,
