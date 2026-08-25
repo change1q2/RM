@@ -3,7 +3,6 @@
   "framework": null,
   "buildCommand": "bash scripts/vercel-build.sh",
   "outputDirectory": null,
-  "installCommand": "echo skip-install",
   "functions": {
     "api/index.js": {
       "maxDuration": 30
