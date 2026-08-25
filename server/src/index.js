@@ -2,7 +2,11 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const { authMiddleware } = require('./middleware/auth');
+
+// 生产环境前端构建产物路径（提前声明，/api/health 诊断也要用）
+const clientDist = path.join(__dirname, '../../client/dist');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -20,7 +24,31 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+app.get('/api/health', async (req, res) => {
+  // 线上诊断：返回关键环境状态 + 实测 Turso 连接，便于排查登录失败等运行时问题
+  const info = {
+    ok: true,
+    useTurso: !!(process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN),
+    tursoUrl: !!process.env.TURSO_DATABASE_URL,
+    tursoToken: !!process.env.TURSO_AUTH_TOKEN,
+    jwtSecret: !!process.env.JWT_SECRET,
+    clientDistExists: fs.existsSync(clientDist),
+    node: process.version,
+    cwd: __dirname
+  };
+  // 实测 Turso 连接 + 查询（本地能连不代表 Vercel 运行时能连）
+  try {
+    const { queryOne } = require('./db');
+    const u = await queryOne('SELECT COUNT(*) c FROM users');
+    info.tursoConnect = 'ok';
+    info.userCount = u.c;
+  } catch (e) {
+    info.tursoConnect = 'fail';
+    info.tursoError = e.message;
+    info.tursoCode = e.code;
+  }
+  res.json(info);
+});
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/persons', authMiddleware, require('./routes/persons'));
 app.use('/api/tags', authMiddleware, require('./routes/tags'));
@@ -31,8 +59,6 @@ app.use('/api/graph', authMiddleware, require('./routes/graph'));
 app.use('/api/data', authMiddleware, require('./routes/data'));
 
 // 生产环境：托管构建后的前端静态文件
-const clientDist = path.join(__dirname, '../../client/dist');
-const fs = require('fs');
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
   app.get(/^(?!\/api|\/uploads).*/, (req, res) => {

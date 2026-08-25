@@ -20,7 +20,9 @@ let activeTx = null;
 function ensureBackend() {
   if (backendReady) return;
   if (USE_TURSO) {
-    const { createClient } = require('@libsql/client');
+    // 用纯 HTTP 入口（@libsql/client/http），避免加载 libsql 原生模块（@libsql-linux-x64-gnu）
+    // 主入口 require('@libsql/client') 会静态 require('libsql')，导致 Vercel Linux 环境因缺原生绑定炸掉
+    const { createClient } = require('@libsql/client/http');
     tursoClient = createClient({ url: TURSO_URL, authToken: TURSO_TOKEN });
     console.log('[db] 使用 Turso 数据库: ' + TURSO_URL);
   } else {
