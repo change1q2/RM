@@ -4,6 +4,7 @@ import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import request from '../utils/request';
 import { useAuthStore } from '../store/auth';
+import { syncEngine } from '../utils/sync';
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
@@ -25,6 +26,19 @@ export default function Login() {
       const data = await request.post(endpoint, values);
       setAuth(data.token, data.user);
       setInitialized(true);
+      
+      // 登录成功后初始化离线数据缓存
+      try {
+        if (navigator.onLine) {
+          await syncEngine.pullLatestData();
+          console.log('[Login] 离线数据缓存初始化完成');
+        } else {
+          console.log('[Login] 离线模式，跳过数据初始化');
+        }
+      } catch (syncErr) {
+        console.warn('[Login] 离线数据缓存初始化失败（不影响登录）:', syncErr.message);
+      }
+      
       message.success(mode === 'init' ? '初始化成功' : '登录成功');
       navigate('/dashboard');
     } catch (e) {

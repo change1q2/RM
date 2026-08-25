@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Layout, Menu, theme as antdTheme } from 'antd';
+import { Layout, Menu, theme as antdTheme, Dropdown, Avatar } from 'antd';
 import {
   HomeOutlined, TeamOutlined, ShareAltOutlined,
-  ImportOutlined, SettingOutlined, MenuFoldOutlined, MenuUnfoldOutlined
+  ImportOutlined, SettingOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
+  UserOutlined, LogoutOutlined
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
+import OfflineStatus from '../components/OfflineStatus';
 
 const { Sider, Header, Content } = Layout;
 
@@ -49,8 +51,27 @@ export default function MainLayout({ children }) {
       </Sider>
       <Layout>
         <Header style={{ background: colorBgContainer, padding: '0 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f0f0f0' }}>
-          {collapsed ? <MenuUnfoldOutlined onClick={() => setCollapsed(false)} style={{ fontSize: 18 }} /> : <MenuFoldOutlined onClick={() => setCollapsed(true)} style={{ fontSize: 18 }} />}
-          <span style={{ color: '#666', fontSize: 13 }}>{user ? user.username : ''}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {collapsed ? <MenuUnfoldOutlined onClick={() => setCollapsed(false)} style={{ fontSize: 18 }} /> : <MenuFoldOutlined onClick={() => setCollapsed(true)} style={{ fontSize: 18 }} />}
+            <span style={{ color: '#666', fontSize: 13 }}>人脉知识库</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <OfflineStatus />
+            <Dropdown
+              menu={{
+                items: [
+                  { key: 'profile', icon: <UserOutlined />, label: user?.username || '用户' },
+                  { type: 'divider' },
+                  { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: () => { logout(); navigate('/login'); } }
+                ]
+              }}
+              placement="bottomRight"
+            >
+              <Avatar style={{ backgroundColor: '#5B6CFF', cursor: 'pointer' }}>
+                {user?.username?.charAt(0).toUpperCase() || 'U'}
+              </Avatar>
+            </Dropdown>
+          </div>
         </Header>
         <Content style={{ margin: 0, padding: 0 }}>
           {children}
