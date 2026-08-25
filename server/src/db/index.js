@@ -8,20 +8,29 @@ const USE_TURSO = !!(TURSO_URL && TURSO_TOKEN);
 
 let sqlite = null;
 let tursoClient = null;
+let backendReady = false;
 
-if (USE_TURSO) {
-  const { createClient } = require('@libsql/client');
-  tursoClient = createClient({ url: TURSO_URL, authToken: TURSO_TOKEN });
-  console.log('[db] 使用 Turso 数据库: ' + TURSO_URL);
-} else {
-  const Database = require('better-sqlite3');
-  const dbPath = process.env.DB_PATH || path.join(__dirname, '../../../data/app.db');
-  const dbDir = path.dirname(dbPath);
-  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
-  sqlite = new Database(dbPath);
-  sqlite.pragma('journal_mode = WAL');
-  sqlite.pragma('foreign_keys = ON');
-  console.log('[db] 使用本地 SQLite: ' + dbPath);
+// 懒加载：首次访问数据库时才初始化连接
+// 原因：Vercel Serverless 缺 Turso 环境变量时，模块顶层 new Database() 会因只读文件系统抛错，
+// 导致整个函数冷启动崩溃（连 /api/health 这种不碰 DB 的接口都挂）。
+// 改为懒加载后，未配置 Turso 时 /api/health 仍可响应，DB 接口返回清晰错误。
+function ensureBackend() {
+  if (backendReady) return;
+  if (USE_TURSO) {
+    const { createClient } = require('@libsql/client');
+    tursoClient = createClient({ url: TURSO_URL, authToken: TURSO_TOKEN });
+    console.log('[db] 使用 Turso 数据库: ' + TURSO_URL);
+  } else {
+    const Database = require('better-sqlite3');
+    const dbPath = process.env.DB_PATH || path.join(__dirname, '../../../data/app.db');
+    const dbDir = path.dirname(dbPath);
+    if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+    sqlite = new Database(dbPath);
+    sqlite.pragma('journal_mode = WAL');
+    sqlite.pragma('foreign_keys = ON');
+    console.log('[db] 使用本地 SQLite: ' + dbPath);
+  }
+  backendReady = true;
 }
 
 function normalizeParams(params) {
@@ -43,6 +52,7 @@ function toArray(params) {
 }
 
 async function query(sql, params) {
+  ensureBackend();
   const args = toArray(params);
   if (USE_TURSO) {
     const rs = await tursoClient.execute({ sql, args });
@@ -56,6 +66,7 @@ async function query(sql, params) {
 }
 
 async function queryOne(sql, params) {
+  ensureBackend();
   const args = toArray(params);
   if (USE_TURSO) {
     const rs = await tursoClient.execute({ sql, args });
@@ -69,6 +80,7 @@ async function queryOne(sql, params) {
 }
 
 async function run(sql, params) {
+  ensureBackend();
   const args = toArray(params);
   if (USE_TURSO) {
     const rs = await tursoClient.execute({ sql, args });
@@ -80,6 +92,7 @@ async function run(sql, params) {
 }
 
 async function execBatch(statements) {
+  ensureBackend();
   if (USE_TURSO) {
     await tursoClient.batch(statements.map(s => ({ sql: s.sql || s, args: s.args || [] })), 'write');
     return;
@@ -98,6 +111,7 @@ async function execBatch(statements) {
 // （原因：better-sqlite3 原生 transaction() 不接受返回 Promise 的异步函数）
 function transaction(fn) {
   return async function wrapped(...args) {
+    ensureBackend();
     if (USE_TURSO) {
       await tursoClient.execute('BEGIN IMMEDIATE');
     } else {
@@ -120,6 +134,7 @@ function transaction(fn) {
 
 // schema 初始化脚本用：执行多条 CREATE TABLE 语句
 async function execScript(sql) {
+  ensureBackend();
   if (USE_TURSO) {
     const stmts = sql.split(';').map(s => s.trim()).filter(Boolean);
     for (const s of stmts) await tursoClient.execute(s);
@@ -130,14 +145,15 @@ async function execScript(sql) {
 
 // 给 init-db 用的原生访问器（仅本地）
 function getRawDb() {
+  ensureBackend();
   if (USE_TURSO) return null;
   return sqlite;
 }
 
 module.exports = {
   USE_TURSO,
-  tursoClient,
-  db: sqlite,
+  get tursoClient() { return tursoClient; },
+  get db() { return sqlite; },
   query,
   queryOne,
   run,
@@ -145,4 +161,5 @@ module.exports = {
   execBatch,
   execScript,
   getRawDb,
+  ensureBackend,
 };
