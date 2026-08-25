@@ -1,20 +1,51 @@
-// Vercel Serverless 单函数入口：所有请求（含 API + 前端静态 + SPA 回退）走这里
-// Vercel 约定：文件位于 api/index.js，函数地址 = /api
-// 但我们通过 vercel.json rewrites 把所有 URL 也转给它，这样 Express 内部决定路由
+// Vercel Serverless 单函数入口
 let app;
-try {
-  require('../server/src/db');
-  app = require('../server/src/index');
-} catch (e) {
-  console.error('Failed to load app:', e.message);
+let dbInitPromise = null;
+
+async function ensureDbInit() {
+  if (dbInitPromise) return dbInitPromise;
+  dbInitPromise = (async () => {
+    const { queryOne, query, run } = require('../server/src/db');
+    try {
+      await queryOne('SELECT 1');
+      console.log('[init] 数据库连接正常');
+    } catch (e) {
+      console.error('[init] 数据库连接失败:', e.message);
+      throw e;
+    }
+
+    // 自动迁移 user_id
+    const tables = ['persons', 'interactions', 'relationships', 'opportunities'];
+    for (const t of tables) {
+      try {
+        const exists = await queryOne(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, [t]);
+        if (!exists) continue;
+        const cols = await query(`PRAGMA table_info(${t})`);
+        const has = cols.some(c => c.name === 'user_id');
+        if (!has) {
+          await run(`ALTER TABLE ${t} ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1`);
+          console.log(`[init] ${t} 已添加 user_id 列`);
+        }
+      } catch (e) {
+        console.error(`[init] ${t} 迁移失败:`, e.message);
+      }
+    }
+    console.log('[init] 数据库初始化完成');
+  })();
+  return dbInitPromise;
 }
 
-module.exports = (req, res) => {
-  if (!app) {
-    res.status(500).json({ error: 'Server initialization failed' });
+module.exports = async (req, res) => {
+  try {
+    await ensureDbInit();
+  } catch (e) {
+    console.error('[init] 初始化失败:', e.message);
+    res.status(500).json({ error: '数据库初始化失败' });
     return;
   }
-  // 将 Vercel 的原始路径透传给 Express（否则只看到 /api 前缀的路径）
+  if (!app) {
+    app = require('../server/src/index');
+  }
   const original = req.headers['x-now-original-url'] || req.headers['x-vercel-original-url'] || req.url;
   if (original && !req.url.startsWith(original)) {
     req.url = original;
